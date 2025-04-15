@@ -1,0 +1,96 @@
+{
+    "credit_application_name": "Emaar",
+    "date": "March 22nd",
+    "borrower_details": {
+        "borrower_name": "",
+        "date_of_application": "26th March, 2025",
+        "type_of_business": "",
+        "risk_rating": "",
+        "new_or_existing": "Existing",
+        "naics_code": "",
+        "borrower_address": "",
+        "telephone": null,
+        "email_address": "a@b.com",
+        "fax_number": "",
+        "branch_number": "",
+        "account_number": ""
+    },
+    "ownership": {
+        "owners": [
+            {
+                "name": null,
+                "position": null,
+                "DOB": null,
+                "percentage_ownership": null,
+                "net_worth": null
+            }
+        ]
+    },
+    "loan_purpose_and_structure": {
+        "loan_purpose": null,
+        "loans": [
+            {
+                "loan_type": null,
+                "loan_term": null,
+                "max_loan_amount": null,
+                "amortization": null,
+                "payment_terms": null,
+                "payment_amount": null,
+                "interest_rate": null,
+                "application_fees": null,
+                "group_and_relationship_profitability": null
+            }
+        ]
+    },
+    "borrower_history_and_background": {
+        "borrower_profile": null
+    },
+    "industry_analysis": {
+        "politcal": null,
+        "economic": null,
+        "social": null,
+        "technological": null,
+        "environmental": null,
+        "legal": null
+    },
+    "business_model_analysis": {
+        "competitors": null,
+        "suppliers": null,
+        "customers": null,
+        "strategy": null
+    },
+    "management_analysis": {
+        "board_of_directors_profile": "Hello!"
+    },
+    "financial_analysis": {
+        "ratios": null,
+        "analysis": null
+    },
+    "security": {
+        "personal_guarantee": null,
+        "real_estate_security": "Call the cops!",
+        "equipment_security": null,
+        "inventory_and_accounts_receivable_security": null
+    },
+    "covenants_and_conditions": {
+        "financial_covenants": {
+            "debt_to_equity_ratio": null,
+            "working_capital_ratio": null,
+            "debt_service_coverage_ratio": null,
+            "funded_debt_ebitda_ratio": null,
+            "minimum_shareholder_equity": null
+        },
+        "reporting_covenants": null,
+        "terms_and_conditions": null
+    },
+    "policy_exceptions": {
+        "policy_exceptions": null
+    },
+    "environmental_comments": {
+        "field_visit_details": null,
+        "environmental_considerations": null
+    },
+    "conclusion_and_recommendation": {
+        "relationship_managers_comments": null
+    }
+}
