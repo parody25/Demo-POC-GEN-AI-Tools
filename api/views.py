@@ -35,6 +35,7 @@ from llama_index.core import VectorStoreIndex
 from llama_index.core import Settings
 from llama_parse import LlamaParse
 from llama_index.core.node_parser import MarkdownElementNodeParser
+from llama_index.core.memory import ChatMemoryBuffer
 from llama_index.core import (
     load_index_from_storage,
     VectorStoreIndex,
@@ -46,7 +47,7 @@ from .scraperMod2 import Website, summarize_text
 from langchain.prompts import PromptTemplate
 # from langchain_openai import ChatOpenAI
 from langchain.chains import LLMChain
-
+import shutil
 
 IMAGES_DOWNLOAD_PATH = os.path.join(os.path.dirname(__file__), 'constant', 'images')
 RISK_ANALYSIS_REPORT = os.path.join(os.path.dirname(__file__), 'constant', 'CBD_PoC_Credit_Bureau_Report.pdf')
@@ -71,7 +72,6 @@ embed_model = LlamaOpenAIEmbedding(model="text-embedding-3-small")
 llm = LlamaOpenAI(model="gpt-4o", api_key=open_API)
 Settings.llm = llm
 Settings.embed_model = embed_model
-
 
 @csrf_exempt
 def separate_embedding_upload_pdfs(request):
@@ -120,29 +120,30 @@ def separate_embedding_upload_pdfs(request):
                     if os.path.exists(embeddings_file):
                         print("Embedding already present{embeddings_file}")
                     else:
-                        print(f"No existing index found. Creating new index for {file_name}")
-                        llama_parser = LlamaParse(result_type="markdown", api_key=llama_cloud_api)
-                        #print(file)
-                        ##os.makedirs(temp_dir, exist_ok=True)
-                        #temp_file_path = os.path.join(temp_dir, file_name)
-                        #with open(temp_file_path, "wb") as f:
-                            #for chunk in file.chunks():
-                                #f.write(chunk)
-                        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as temp_file:
-                            temp_file.write(file.read())
-                            temp_file_path = temp_file.name
+                        global_embedding_file = f"embeddings/global/{file_name}_embedding.pkl"
+                        if os.path.exists(global_embedding_file):
+                            shutil.copytree(global_embedding_file, embeddings_file)
+                            print(f"Embedding for this file {file_name} is already available, copying the same")
+                        else:
+                            print(f"No existing index found. Creating new index for {file_name}")
+                            llama_parser = LlamaParse(result_type="markdown", api_key=llama_cloud_api)
+                            with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as temp_file:
+                                temp_file.write(file.read())
+                                temp_file_path = temp_file.name
 
-                        documents = llama_parser.load_data(temp_file_path)
-                        node_parser = MarkdownElementNodeParser(llm=llm,num_workers=15)
-                        nodes = node_parser.get_nodes_from_documents(documents)
-                        base_nodes, objects = node_parser.get_nodes_and_objects(nodes)
-                        index = VectorStoreIndex(base_nodes+objects)
-                        index.storage_context.persist(embeddings_file)
+                            documents = llama_parser.load_data(temp_file_path)
+                            node_parser = MarkdownElementNodeParser(llm=llm,num_workers=15)
+                            nodes = node_parser.get_nodes_from_documents(documents)
+                            base_nodes, objects = node_parser.get_nodes_and_objects(nodes)
+                            index = VectorStoreIndex(base_nodes+objects)
+                            index.storage_context.persist(embeddings_file)
+                            shutil.copy(embeddings_file, global_embedding_file)
+                            print(f"New embedding created and saved globally at {global_embedding_file}")
                         pdf_doc = PDFDocument.objects.create(
-                        application=application,
-                        pdf_name=file_name,
-                        time_uploaded=datetime.datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
-                    )
+                            application=application,
+                            pdf_name=file_name,
+                            time_uploaded=datetime.datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
+                        )
                         document_info["pdf_document_id"] = pdf_doc.id
                         document_embeddings_info.append(document_info)
                         print(f"Saved embeddings for {file_name} at {embeddings_file}")
@@ -850,6 +851,9 @@ def collateral_chat(request):
             return JsonResponse({"error": str(e)}, status=500)
     return JsonResponse({"error": "Only POST requests allowed"}, status=405)
 
+VECTOR_DB_CACHE = {}
+CHAT_ENGINE_CACHE = {}
+memory = ChatMemoryBuffer.from_defaults(token_limit=10000)
 @csrf_exempt
 def management_chat(request):
     if request.method == 'POST':
@@ -857,36 +861,58 @@ def management_chat(request):
             data = json.loads(request.body)
             application_id = data.get('application_id')
             question = data.get('question')
-            
             if not application_id or not question:
                 return JsonResponse({"error": "application_id and question are required"}, status=400)
-
-            embedding_dir = os.path.join("embeddings", application_id)
-            if not os.path.exists(embedding_dir):
-                return JsonResponse({"error": "Application embeddings directory not found"}, status=404)
-
-            management_files = [f for f in os.listdir(embedding_dir) 
-                if 'annual' in f.lower() and f.endswith('.pkl')
-            ]
-            if not management_files:
-                return JsonResponse({"error": "No annual report embeddings found"}, status=404)
+            if application_id in VECTOR_DB_CACHE:
+                vector_db = VECTOR_DB_CACHE[application_id]
+                chat_engine = CHAT_ENGINE_CACHE[application_id]
+                print(f"Using cached vector DB for {application_id}")
+ 
+            else:
+ 
+                embedding_dir = os.path.join("embeddings", application_id)
+                if not os.path.exists(embedding_dir):
+                    return JsonResponse({"error": "Application embeddings directory not found"}, status=404)
+ 
+                management_files = [f for f in os.listdir(embedding_dir) 
+                    if 'annual' in f.lower() and f.endswith('.pkl')
+                ]
+                if not management_files:
+                    return JsonResponse({"error": "No annual report embeddings found"}, status=404)
+                embedding_file = management_files[0]
+                embedding_path = os.path.join(embedding_dir, embedding_file)
+                if not os.path.exists(embedding_path):
+                    return JsonResponse({"error": "Annual Report embeddings not found"}, status=404)           
+                if os.path.exists(embedding_path):
+                    print(f"Loading existing Faiss index: {embedding_path}")
+                    storage_context = StorageContext.from_defaults(persist_dir=embedding_path)
+                    vector_db = load_index_from_storage(storage_context=storage_context)
+                    VECTOR_DB_CACHE[application_id] = vector_db
+                    chat_engine = vector_db.as_chat_engine(similarity_top_k=25,
+                    chat_mode="context",
+                    memory=memory,
+                    system_prompt=(
+                    "You are an AI assistant who answers the user questions based on the context provided from Annual Report"
+                    ),
+                    )
+                    CHAT_ENGINE_CACHE[application_id] = chat_engine
+ 
             
-            embedding_file = management_files[0]
-            embedding_path = os.path.join(embedding_dir, embedding_file)
-            
-            if not os.path.exists(embedding_path):
-                return JsonResponse({"error": "Annual Report embeddings not found"}, status=404)           
-            if os.path.exists(embedding_path):
-                print(f"Loading existing Faiss index: {embedding_path}")
-                storage_context = StorageContext.from_defaults(persist_dir=embedding_path)
-                vector_db = load_index_from_storage(storage_context=storage_context)
-            
-            print(f"Vectorstore loaded for the application ID {embedding_path}")
+                print(f"Vectorstore loaded Newly and NewChat Engine for the application ID {embedding_path}")
 
+ 
             # 3. Process the single question using the same process_question function
-            llm = ChatOpenAI(model="gpt-4o", temperature=0)
-            _, response = process_question(question, vector_db, llm)
-
+            #llm = ChatOpenAI(model="gpt-4o", temperature=0)
+            #chat_engine = vector_db.as_chat_engine(similarity_top_k=25,
+            #chat_mode="context",
+            #memory=memory,
+            #system_prompt=(
+            #"You are an AI assistant who answers the user questions based on the context provided from Annual Report"
+            #),
+        #)
+            response = chat_engine.chat(question)
+            #_, response = process_question(question, vector_db, llm)
+ 
             return JsonResponse({
                 "question": question,
                 "answer": response.response if hasattr(response, 'response') else response,
